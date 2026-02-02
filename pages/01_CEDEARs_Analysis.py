@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import yfinance as yf
+import plotly.graph_objects as go
 from src import market_data, analysis
 import os
 
@@ -231,16 +232,56 @@ try:
                                 # Remove rows with NaN (gaps where data is missing in any series)
                                 comparison_data.dropna(inplace=True)
                                 
-                                # Convert index to string to avoid showing time gaps (weekend/holidays) on the chart
-                                # Format depends on interval: Date for daily, Date+Time for intraday
-                                if "d" in selected_interval:
-                                    # Daily: YYYY-MM-DD
-                                    comparison_data.index = comparison_data.index.strftime("%Y-%m-%d")
-                                else:
-                                    # Intraday: YYYY-MM-DD HH:MM
-                                    comparison_data.index = comparison_data.index.strftime("%Y-%m-%d %H:%M")
+                                # Plotly uses native Datetime objects, so no string conversion needed.
+
+                                # st.line_chart(comparison_data, height=600)
+                                # Plotly Logic
+                                fig = go.Figure()
                                 
-                                st.line_chart(comparison_data, height=600)
+                                # Add traces
+                                for col in comparison_data.columns:
+                                    fig.add_trace(go.Scatter(
+                                        x=comparison_data.index,
+                                        y=comparison_data[col],
+                                        mode='lines',
+                                        name=col
+                                    ))
+                                
+                                # Layout Configuration
+                                fig.update_layout(
+                                    title="Performance Comparison",
+                                    xaxis_title="Date",
+                                    yaxis_title=graph_metric,
+                                    height=600,
+                                    hovermode="x unified",
+                                    xaxis=dict(
+                                        type='date',
+                                        rangeslider=dict(visible=True),
+                                    )
+                                )
+
+                                # Gap Removal Logic (Weekends)
+                                # Only apply if it's daily data or if we want to risk it with intraday.
+                                # For simple weekend removal on daily data:
+                                if "d" in selected_interval:
+                                     # Remove Saturday/Sunday
+                                     # Daterange bounds: Saturday (6) to Monday (1) excluded? 
+                                     # Plotly rangebreaks: values=... or bounds=["sat", "mon"]
+                                     fig.update_xaxes(
+                                         rangebreaks=[
+                                             dict(bounds=["sat", "mon"]), # hide weekends
+                                         ]
+                                     )
+                                elif selected_interval in ["1h", "30m", "15m", "5m"]:
+                                    # For intraday, hiding non-trading hours is tricky without complex patterns.
+                                    # But hiding weekends is always safe.
+                                     fig.update_xaxes(
+                                         rangebreaks=[
+                                             dict(bounds=["sat", "mon"]), # hide weekends
+                                         ]
+                                     )
+
+                                st.plotly_chart(fig, use_container_width=True)
                             else:
                                 st.warning("No data available for the selected tickers.")
              else:
