@@ -1,0 +1,1 @@
+For all python commands use `uv` tool
