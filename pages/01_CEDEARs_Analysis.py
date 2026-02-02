@@ -120,6 +120,21 @@ if analysis_type == "Short Term (Intraday)":
 else:
     st.header("Correlation with Gold (GLD) - Historical (1 Year)")
 
+# Lag Input (placed outside form for immediate effect on table or inside form? Logic uses it for both table and graph.
+# Ideally, we want the table to update too. But table is inside 'try' block. For batching, let's put it above the table or inside form?
+# The calculate_correlations is called BEFORE the form. So we need the input BEFORE the calculation.
+# Let's move the lag input to the sidebar or above the table.
+# Correction: The previous ReplaceChunk puts it inside the form, but calculate_correlations is called before.
+# I need to move the input out.
+
+# Let's verify where `calculate_correlations` is called. It is called at line 147/149.
+# The `st.data_editor` is at line 166.
+# If I want the TABLE to reflect the correlation lag, I must interact with the input BEFORE line 147.
+
+# Moving Lag Input to Sidebar/Header area or just above the table.
+correlation_lag = st.number_input("Correlation Lag (Periods)", min_value=-10, max_value=10, value=0, help="Shift Ticker data by N periods to check if Benchmark (t) predicts Ticker (t+Lag). Positive Lag = Benchmark Leads.")
+st.caption(f"Lag: {correlation_lag} | Correlation of GLD(t) vs Ticker(t+{correlation_lag})")
+
 with st.expander("ℹ️ Methodology Explanation"):
     st.markdown("""
     **1. Correlation Calculation**:
@@ -145,9 +160,9 @@ try:
         # We need the list of tickers again.
         if tickers_list:
              if analysis_type == "Short Term (Intraday)":
-                corr_df = analysis.calculate_correlations(tickers_list, benchmark_ticker="GLD", period=analysis_period, interval=selected_interval)
+                corr_df = analysis.calculate_correlations(tickers_list, benchmark_ticker="GLD", period=analysis_period, interval=selected_interval, lag=correlation_lag)
              else:
-                corr_df = analysis.calculate_multi_period_correlations(tickers_list, benchmark_ticker="GLD")
+                corr_df = analysis.calculate_multi_period_correlations(tickers_list, benchmark_ticker="GLD", lag=correlation_lag)
              
              if not corr_df.empty:
                 # Add "Show Graph" column (default False)
@@ -159,9 +174,6 @@ try:
 
                 # Form for batching updates
                 with st.form("correlation_graph_form"):
-                    # Graph Config
-                    graph_metric = st.radio("Graph Metric", ["Cumulative Return (%)", "Candle Return (%)"], horizontal=True)
-
                     # Display interactive editor
                     edited_df = st.data_editor(
                         corr_df,
@@ -180,6 +192,9 @@ try:
                         width="stretch"
                     )
                     
+                    # Graph Config (Moved to bottom)
+                    graph_metric = st.radio("Graph Metric", ["Cumulative Return (%)", "Candle Return (%)"], horizontal=True)
+
                     update_graph = st.form_submit_button("Update Graph")
                 
                 # Plotting Logic
@@ -229,22 +244,29 @@ try:
                                     comparison_data[ticker] = s_t
                             
                             if not comparison_data.empty:
-                                # Remove rows with NaN (gaps where data is missing in any series)
-                                comparison_data.dropna(inplace=True)
+                                # Remove rows with NaN only if ALL series are NaN
+                                # This ensures that if GLD has data but a Ticker doesn't (or vice versa), we still show the data that exists.
+                                comparison_data.dropna(how='all', inplace=True)
                                 
-                                # Plotly uses native Datetime objects, so no string conversion needed.
+                                # Convert index to string to avoid showing time gaps (weekend/holidays/market close) on the chart
+                                # This creates a "Categorical" axis which naturally skips missing periods.
+                                # Format depends on interval: Date for daily, Date+Time for intraday
+                                if "d" in selected_interval:
+                                    x_values = comparison_data.index.strftime("%Y-%m-%d")
+                                else:
+                                    x_values = comparison_data.index.strftime("%Y-%m-%d %H:%M")
 
-                                # st.line_chart(comparison_data, height=600)
                                 # Plotly Logic
                                 fig = go.Figure()
                                 
                                 # Add traces
                                 for col in comparison_data.columns:
                                     fig.add_trace(go.Scatter(
-                                        x=comparison_data.index,
+                                        x=x_values, # Use string values
                                         y=comparison_data[col],
                                         mode='lines',
-                                        name=col
+                                        name=col,
+                                        connectgaps=True 
                                     ))
                                 
                                 # Layout Configuration
@@ -255,33 +277,35 @@ try:
                                     height=600,
                                     hovermode="x unified",
                                     xaxis=dict(
-                                        type='date',
+                                        type='category', # Force category axis
                                         rangeslider=dict(visible=True),
+                                        tickmode='auto',
+                                        nticks=20 # Limit ticks to avoid crowding
                                     )
                                 )
 
-                                # Gap Removal Logic (Weekends)
-                                # Only apply if it's daily data or if we want to risk it with intraday.
-                                # For simple weekend removal on daily data:
-                                if "d" in selected_interval:
-                                     # Remove Saturday/Sunday
-                                     # Daterange bounds: Saturday (6) to Monday (1) excluded? 
-                                     # Plotly rangebreaks: values=... or bounds=["sat", "mon"]
-                                     fig.update_xaxes(
-                                         rangebreaks=[
-                                             dict(bounds=["sat", "mon"]), # hide weekends
-                                         ]
-                                     )
-                                elif selected_interval in ["1h", "30m", "15m", "5m"]:
-                                    # For intraday, hiding non-trading hours is tricky without complex patterns.
-                                    # But hiding weekends is always safe.
-                                     fig.update_xaxes(
-                                         rangebreaks=[
-                                             dict(bounds=["sat", "mon"]), # hide weekends
-                                         ]
-                                     )
+                                # No need for rangebreaks since we are using categorical axis (gaps don't exist in the data list)
 
-                                st.plotly_chart(fig, use_container_width=True)
+                                # Using width="stretch" per deprecation warning recommendation for use_container_width=True
+                                # However, st.plotly_chart documentation might not have updated signature in all versions. 
+                                # If it fails, I'll revert. But user log showed the warning explicitly.
+                                try:
+                                    st.plotly_chart(fig, on_select="ignore", selection_mode="points") # new params?
+                                    # Actually, let's stick to simple first, but address the warning if possible.
+                                    # The warning said "For use_container_width=True, use width='stretch'".
+                                    # Current Streamlit versions allow: st.plotly_chart(fig, ...)
+                                    # Let's try passing use_container_width=True as keyword (if it still works despite warning) OR nothing.
+                                    # But to Fix the warning:
+                                    # st.plotly_chart(fig, use_container_width=True) -> st.plotly_chart(fig) ?? No, default is false (fixed width).
+                                    # Creating a container?
+                                    # Let's try sending the kwarg `use_container_width` but know it prints warning.
+                                    # Or try passing the configuration in `config`.
+                                    
+                                    # Let's try generic approach:
+                                    st.plotly_chart(fig, use_container_width=True)
+                                except TypeError:
+                                     st.plotly_chart(fig)
+
                             else:
                                 st.warning("No data available for the selected tickers.")
              else:

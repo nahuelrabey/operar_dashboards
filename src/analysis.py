@@ -66,9 +66,10 @@ def get_daily_performance(df_prices: pd.DataFrame, target_date: pd.Timestamp) ->
     
     return pd.DataFrame(stats)
 
-def calculate_correlations(tickers: list, benchmark_ticker: str = "GLD", period: str = "5d", interval: str = "1h") -> pd.DataFrame:
+def calculate_correlations(tickers: list, benchmark_ticker: str = "GLD", period: str = "5d", interval: str = "1h", lag: int = 0) -> pd.DataFrame:
     """
     Fetches data for tickers and benchmark, and calculates correlation.
+    If lag > 0, checks if Benchmark(t) correlates with Ticker(t+lag).
     """
     # Fetch CEDEARs
     df_cedears = market_data.fetch_batch_candles(tickers, period=period, interval=interval)
@@ -97,6 +98,17 @@ def calculate_correlations(tickers: list, benchmark_ticker: str = "GLD", period:
     if cedear_closes.empty:
         return pd.DataFrame()
         
+    benchmark_series = benchmark_series.rename(benchmark_ticker)
+    
+    if cedear_closes.empty:
+        return pd.DataFrame()
+        
+    # Apply Lag
+    # if lag=1, we want corr(Bench[t], Ticker[t+1])
+    # Ticker.shift(-1) puts T[t+1] at index t.
+    if lag != 0:
+        cedear_closes = cedear_closes.shift(-lag)
+
     # Join with lsuffix to handle collisions (e.g. GLD in tickers vs GLD benchmark)
     combined = cedear_closes.join(benchmark_series, how='inner', lsuffix='_TICKER')
     
@@ -112,7 +124,7 @@ def calculate_correlations(tickers: list, benchmark_ticker: str = "GLD", period:
     
     return corr_df
 
-def calculate_multi_period_correlations(tickers: list, benchmark_ticker: str = "GLD") -> pd.DataFrame:
+def calculate_multi_period_correlations(tickers: list, benchmark_ticker: str = "GLD", lag: int = 0) -> pd.DataFrame:
     """
     Fetches 1y/1d data and calculates correlations for 1M, 3M, 6M, and 1Y periods.
     """
@@ -135,6 +147,10 @@ def calculate_multi_period_correlations(tickers: list, benchmark_ticker: str = "
         benchmark_series = benchmark_closes
     benchmark_series = benchmark_series.rename(benchmark_ticker)
     
+    # Apply Lag
+    if lag != 0:
+        cedear_closes = cedear_closes.shift(-lag)
+
     combined = cedear_closes.join(benchmark_series, how='inner', lsuffix='_TICKER')
     
     if combined.empty:
