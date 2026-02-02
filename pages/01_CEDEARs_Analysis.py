@@ -48,8 +48,7 @@ st.sidebar.markdown("---")
 st.sidebar.caption(
     "**Configuration Guide**:\n"
     "- **Select Date**: Choose the date to view daily performance (Gainers/Losers). If the date is a holiday/weekend, the latest available data is shown.\n"
-    "- **Refresh Data**: Clears the local cache and forces a fresh download of market data from Yahoo Finance.\n"
-    "- **Refresh Data**: Clears the local cache and forces a fresh download of market data from Yahoo Finance.\n"
+    "- **Refresh Data**: Clears the local cache (including disk cache) and forces a fresh download of market data from Yahoo Finance.\n"
     "- **Analysis Type**: Switch between Short Term (Intraday/Daily) and Long Term (Historical) views."
 )
 
@@ -80,6 +79,7 @@ df_prices, tickers_list = load_market_data()
 
 if refresh_btn:
     st.cache_data.clear()
+    market_data.clear_cache()
     df_prices, tickers_list = load_market_data()
 data_state.empty()
 
@@ -165,8 +165,12 @@ try:
                 corr_df = analysis.calculate_multi_period_correlations(tickers_list, benchmark_ticker="GLD", lag=correlation_lag)
              
              if not corr_df.empty:
-                # Add "Show Graph" column (default False)
-                corr_df["Show Graph"] = False
+                # Initialize session state for selected tickers if not exists
+                if "selected_tickers_graph" not in st.session_state:
+                    st.session_state["selected_tickers_graph"] = []
+
+                # Add "Show Graph" column (default False or from session state)
+                corr_df["Show Graph"] = corr_df["Ticker"].isin(st.session_state["selected_tickers_graph"])
                 
                 # Make "Show Graph" the first column
                 cols = ["Show Graph"] + [c for c in corr_df.columns if c != "Show Graph"]
@@ -199,7 +203,13 @@ try:
                 
                 # Plotting Logic
                 if update_graph:
+                    # Update session state with current selections
                     selected_tickers = edited_df[edited_df["Show Graph"]]["Ticker"].tolist()
+                    st.session_state["selected_tickers_graph"] = selected_tickers
+                    
+                    st.write("DEBUG: Button Clicked")
+                    st.write(edited_df[edited_df["Show Graph"]])
+                    st.write(f"DEBUG: Selected Tickers: {selected_tickers}")
                     
                     if selected_tickers:
                         st.subheader("Performance Comparison (vs GLD)")

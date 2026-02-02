@@ -88,6 +88,17 @@ def fetch_batch_candles(tickers: list[str], period: str = "7d", interval: str = 
         print(f"Error fetching batch data: {e}")
         return pd.DataFrame()
 
+def clear_cache():
+    """Deletes all files in the cache directory."""
+    if os.path.exists(CACHE_DIR):
+        for filename in os.listdir(CACHE_DIR):
+            file_path = os.path.join(CACHE_DIR, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                print(f"Error deleting {file_path}: {e}")
+
 if __name__ == "__main__":
     # Simple test
     t = "AAPL"
