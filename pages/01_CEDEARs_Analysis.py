@@ -207,10 +207,6 @@ try:
                     selected_tickers = edited_df[edited_df["Show Graph"]]["Ticker"].tolist()
                     st.session_state["selected_tickers_graph"] = selected_tickers
                     
-                    st.write("DEBUG: Button Clicked")
-                    st.write(edited_df[edited_df["Show Graph"]])
-                    st.write(f"DEBUG: Selected Tickers: {selected_tickers}")
-                    
                     if selected_tickers:
                         st.subheader("Performance Comparison (vs GLD)")
                         
